@@ -112,7 +112,7 @@ globals:
     initial_value: '1'  # Armazena a última velocidade ativa (padrão: Vel1)
     restore_value: yes  # Restaura a velocidade anterior ao reiniciar
 
-# Scripts de controle com interbloqueio e memória
+# Scripts de controle com interbloqueio, memória e boot em vel 3
 script:
   - id: desliga_todas_bobinas
     then:
@@ -188,14 +188,30 @@ script:
                 else:
                   - script.execute: set_velocidade_3
   
+  - id: liga_com_boot_vel3
+    then:
+      # Liga motor sempre em Velocidade 3
+      - script.execute: desliga_todas_bobinas
+      - delay: 50ms
+      - output.turn_on: rele_seguranca
+      - delay: 50ms
+      - output.turn_on: rele_vel3
+      - globals.set:
+          id: estado_motor
+          value: '3'
+      # Aguarda 1 segundo
+      - delay: 1000ms
+      # Muda para a última velocidade memorizada
+      - script.execute: liga_velocidade_anterior
+  
   - id: toggle_motor
     then:
       - if:
           condition:
               lambda: 'return id(estado_motor) == 0;'
           then:
-            # Motor desligado: liga na última velocidade memorizada
-            - script.execute: liga_velocidade_anterior
+            # Motor desligado: liga em Vel 3 e depois muda para última velocidade memorizada
+            - script.execute: liga_com_boot_vel3
           else:
             # Motor ligado: desliga
             - script.execute: desliga_motor
@@ -233,7 +249,7 @@ switch:
     lambda: 'return id(estado_motor) != 0;'
     turn_on_action:
       then:
-        - script.execute: liga_velocidade_anterior
+        - script.execute: liga_com_boot_vel3
     turn_off_action:
       then:
         - script.execute: desliga_motor
