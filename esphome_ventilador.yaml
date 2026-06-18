@@ -100,13 +100,19 @@ binary_sensor:
       - delayed_on: 20ms
       - delayed_off: 20ms
 
-# Variáveis de estado
+# Variáveis de estado com persistência
 globals:
   - id: estado_motor
     type: int
     initial_value: '0'  # 0=Desligado, 1=Vel1, 2=Vel2, 3=Vel3
+    restore_value: yes  # Restaura o estado anterior ao reiniciar
+    
+  - id: ultima_velocidade
+    type: int
+    initial_value: '1'  # Armazena a última velocidade ativa (padrão: Vel1)
+    restore_value: yes  # Restaura a velocidade anterior ao reiniciar
 
-# Scripts de controle com interbloqueio
+# Scripts de controle com interbloqueio e memória
 script:
   - id: desliga_todas_bobinas
     then:
@@ -125,6 +131,9 @@ script:
       - globals.set:
           id: estado_motor
           value: '1'
+      - globals.set:
+          id: ultima_velocidade
+          value: '1'
   
   - id: set_velocidade_2
     then:
@@ -135,6 +144,9 @@ script:
       - output.turn_on: rele_vel2
       - globals.set:
           id: estado_motor
+          value: '2'
+      - globals.set:
+          id: ultima_velocidade
           value: '2'
   
   - id: set_velocidade_3
@@ -147,6 +159,9 @@ script:
       - globals.set:
           id: estado_motor
           value: '3'
+      - globals.set:
+          id: ultima_velocidade
+          value: '3'
   
   - id: desliga_motor
     then:
@@ -157,14 +172,32 @@ script:
           id: estado_motor
           value: '0'
   
+  - id: liga_velocidade_anterior
+    then:
+      - if:
+          condition:
+              lambda: 'return id(ultima_velocidade) == 1;'
+          then:
+            - script.execute: set_velocidade_1
+          else:
+            - if:
+                condition:
+                    lambda: 'return id(ultima_velocidade) == 2;'
+                then:
+                  - script.execute: set_velocidade_2
+                else:
+                  - script.execute: set_velocidade_3
+  
   - id: toggle_motor
     then:
       - if:
           condition:
               lambda: 'return id(estado_motor) == 0;'
           then:
-            - script.execute: set_velocidade_1
+            # Motor desligado: liga na última velocidade memorizada
+            - script.execute: liga_velocidade_anterior
           else:
+            # Motor ligado: desliga
             - script.execute: desliga_motor
 
 # Sensores de estado para Home Assistant
@@ -184,6 +217,13 @@ sensor:
       }
       return 0;
     unit_of_measurement: ""
+  
+  - platform: template
+    name: "Última Velocidade Memorizada"
+    id: sensor_ultima_velocidade
+    lambda: |-
+      return id(ultima_velocidade);
+    unit_of_measurement: ""
 
 # Switch para integração com Home Assistant
 switch:
@@ -193,7 +233,7 @@ switch:
     lambda: 'return id(estado_motor) != 0;'
     turn_on_action:
       then:
-        - script.execute: set_velocidade_1
+        - script.execute: liga_velocidade_anterior
     turn_off_action:
       then:
         - script.execute: desliga_motor
